@@ -30,30 +30,9 @@ public:
   uint32_t conn_id_;
   uint32_t encoder_id_;
   uint32_t crtc_id_;
-  
-  // uint32_t fb_handle_;
-  // uint32_t stride_;
-  // uint32_t buffer_handle_;
-  // void* buffer_map_;
-  
+ 
   uint32_t width_;
   uint32_t height_;
-
-  // EGLDisplay display;
-  // EGLContext context;
-  // EGLConfig config;
-  // GLuint fb_, color_rb_, depth_rb_;
-  // EGLImageKHR image_;
-  // PFNEGLCREATEIMAGEKHRPROC CreateImageKHR;
-  // PFNEGLDESTROYIMAGEKHRPROC DestroyImageKHR;
-  // PFNGLEGLIMAGETARGETTEXTURE2DOESPROC EGLImageTargetTexture2DOES;
-  // PFNEGLCREATESYNCKHRPROC CreateSyncKHR;
-  // PFNEGLCLIENTWAITSYNCKHRPROC ClientWaitSyncKHR;
-
-  // bool egl_sync_supported;
-
-  // struct gbm_device* gbm_;
-  // struct gbm_bo* bo_;
 };
 
 class Buffer {
@@ -88,7 +67,7 @@ class Buffer {
 std::vector<Connector> conn_list;
 Buffer buffer;
 
-bool init_egl(Connector& conn)
+bool init_egl(int fd, Connector& conn)
 {
   buffer.CreateImageKHR =
       (PFNEGLCREATEIMAGEKHRPROC)eglGetProcAddress("eglCreateImageKHR");
@@ -116,7 +95,8 @@ bool init_egl(Connector& conn)
     buffer.egl_sync_supported = false;
   }
 
-  buffer.display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+  buffer.gbm_ = gbm_create_device (fd);
+  buffer.display = eglGetDisplay(buffer.gbm_);
 
   EGLint major, minor = 0;
   if (!eglInitialize(buffer.display, &major, &minor)) {
@@ -297,11 +277,10 @@ void page_flip_handler2(int fd,
 
 auto create_buffer(int fd, uint32_t width, uint32_t height) {
   
-  drm_mode_create_dumb creq = {
-    .width  = width,
-    .height = height,
-    .bpp    = 32
-  };
+  struct drm_mode_create_dumb creq;
+  creq.width = width;
+  creq.height = height;
+  creq.bpp = 32;
 
   auto ret = ioctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &creq);
   if (ret) {
@@ -390,7 +369,7 @@ int main() {
   
   ret = drmModeAddFB(fd, width, height, 24, 32, buffer_stride, buffer_handle, &fb_handle);
   prepare(fd);
-  init_egl(conn_list[0]);
+  init_egl(fd, conn_list[0]);
   init_egl_buffer();
   
   for (auto i=0 ; i<conn_list.size() ; ++i) {
@@ -427,12 +406,11 @@ int main() {
     
     // for(auto&& conn : conn_list) {
       // memset(conn.buffer_map_, color, conn.width_ * conn.height_ * 4);
-      drmModeClip clip = {
-	.x1 = 0,
-	.x2 = (uint16_t)width,
-	.y1 = 0,
-	.y2 = (uint16_t)height
-      };
+      drmModeClip clip; 
+      clip.x1 = 0;
+      clip.x2 = (uint16_t)width;
+      clip.y1 = 0;
+      clip.y1 = (uint16_t)height;
       drmModeDirtyFB(fd, fb_handle, &clip, 1);
       sleep(1);
       // auto ret = drmModePageFlip(fd, conn.crtc_id_,
